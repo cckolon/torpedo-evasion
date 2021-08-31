@@ -4,41 +4,39 @@ using UnityEngine;
 
 public class pntorpedo : MonoBehaviour
 {
-    int collisions = 0;
-    bool permitcollision = true;
-    bool reported = false;
     public float speed;// in knots
-    float oldspeed;
     public float detectionRange; //distance, in yards, at which a target can be detected
     public float detectionAngle;
-    float cosdetectionangle;
     public float runTime; //in seconds
     public float turnSpeed;
-    float lastTime;
-    float waterheight;
     public float sourceLevel;
     public float pnGain;
     public GameObject shooter;
-    GameObject waterline;
     public Vector3 transitVector;
+    public GameObject target;
+    public GameObject explosion;
+    public List<GameObject> targetList = new List<GameObject>();
+    public bool enable = false;
+    int collisions = 0;
+    bool permitcollision = true;
+    bool reported = false;
+    float oldspeed;
+    float cosdetectionangle;
+    float lastTime;
+    float waterheight;
+    GameObject waterline;
     Vector3 desiredRotation;
-    Vector3 targetDir;
-    Vector3 targetCross;
     Vector3 interceptPoint;
     Vector3 lastVelocity;
     Vector3 targetAcceleration;
     Rigidbody rb;
     Rigidbody targetRb;
-    public GameObject target;
-    public GameObject explosion;
-    public List<GameObject> targetList = new List<GameObject>();
-    public bool enable = false;
     float startTime;
     // Start is called before the first frame update
     void Start()
     {
-        rb = GetComponent<Rigidbody>();
         oldspeed = speed;
+        rb = GetComponent<Rigidbody>();
         waterline = GameObject.FindWithTag("Waterline");
         target = null;
         cosdetectionangle = Mathf.Cos(detectionAngle*Mathf.PI/180);
@@ -79,8 +77,8 @@ public class pntorpedo : MonoBehaviour
             }
             else
             {
-                targetDir = interceptPoint - transform.position; //target direction is the vector from torpedo to intercept point
-                targetCross = Vector3.Cross(transform.forward.normalized,targetDir.normalized); //use the cross product to find angle between where the torp is pointing and where it needs to point
+                Vector3 targetdirection = interceptPoint - transform.position; //target direction is the vector from torpedo to intercept point
+                Vector3 targetCross = Vector3.Cross(transform.forward.normalized,targetdirection.normalized); //use the cross product to find angle between where the torp is pointing and where it needs to point
                 desiredRotation = targetCross.normalized*Mathf.Clamp(10*Mathf.Asin(targetCross.magnitude),0,1)+Vector3.Cross(transform.up,Vector3.up); //use arcsin of the magnitude of targetcross to find the angle, in radians. Torque is proportional to that. Multiply by the normalized axis.
             }
         }
@@ -175,7 +173,7 @@ public class pntorpedo : MonoBehaviour
     }
     void Transit()
     {
-        targetCross = Vector3.Cross(transform.forward.normalized,transitVector.normalized);
+        Vector3 targetCross = Vector3.Cross(transform.forward.normalized,transitVector.normalized);
         desiredRotation = targetCross.normalized*Mathf.Clamp(10*Mathf.Asin(targetCross.magnitude),0,1); //use arcsin of the magnitude of targetcross to find the angle, in radians. Torque is proportional to that. Multiply by the normalized axis.
     }
 
