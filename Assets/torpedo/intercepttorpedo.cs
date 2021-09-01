@@ -24,7 +24,6 @@ public class intercepttorpedo : MonoBehaviour
     bool reported = false;
     float oldspeed;
     float cosdetectionangle;
-    float lastTime;
     float waterheight;
     GameObject waterline;
     Vector3 desiredRotation;
@@ -158,31 +157,30 @@ public class intercepttorpedo : MonoBehaviour
 
     void HuntTarget()
     {
-        Vector3 relativemotion = targetRb.velocity - rb.velocity.magnitude*transform.forward;
-        Vector3 targetdirection = target.transform.position - transform.position;
-        float targetDist = targetdirection.magnitude;
-        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle)//you've been detected!
+        Vector3 relativemotion = targetRb.velocity - rb.velocity.magnitude*transform.forward; //relative velocity between torpedo and target
+        Vector3 targetdirection = target.transform.position - transform.position; //vector from torpedo to target
+        float targetDist = targetdirection.magnitude; //distance to target
+        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle) //target is detected
         {
-            targetAcceleration = (1-accelerationInertia)*(targetRb.velocity - lastVelocity)/Time.fixedDeltaTime+accelerationInertia*targetAcceleration;
-            lastVelocity = targetRb.velocity;
-            lastTime = Time.time;
-            float tgo = targetdirection.sqrMagnitude/Mathf.Max(Mathf.Abs(Vector3.Dot(relativemotion,targetdirection)),.1f);
-            if (targetDist < terminalDistance/3.3)
+            targetAcceleration = (1-accelerationInertia)*(targetRb.velocity - lastVelocity)/Time.fixedDeltaTime+accelerationInertia*targetAcceleration; //calculate target acceleration, including low-pass filter
+            lastVelocity = targetRb.velocity; //reset target's last velocity
+            float tgo = targetdirection.sqrMagnitude/Mathf.Max(Mathf.Abs(Vector3.Dot(relativemotion,targetdirection)),.1f); //calculate time to go
+            if (targetDist < terminalDistance/3.3) //target is close enough to account for acceleration
             {
-                interceptPoint = target.transform.position + targetRb.velocity*tgo + targetAcceleration*tgo*tgo/2;
+                interceptPoint = target.transform.position + targetRb.velocity*tgo + targetAcceleration*tgo*tgo/2; //calculate intercept point based on acceleration and velocity
             }
             else
             {
-                interceptPoint = target.transform.position + targetRb.velocity*tgo;
+                interceptPoint = target.transform.position + targetRb.velocity*tgo; //calculate intercept point based on velocity (linear)
             }
-            interceptMarker.position = interceptPoint;
+            interceptMarker.position = interceptPoint; //move red intercept marker to display intercept point
             Vector3 interceptdirection = interceptPoint - transform.position; //intercept direction is the vector from torpedo to intercept point
             Vector3 targetCross = Vector3.Cross(transform.forward.normalized,interceptdirection.normalized); //use the cross product to find angle between where the torp is pointing and where it needs to point
             desiredRotation = targetCross.normalized*Mathf.Clamp(10*Mathf.Asin(targetCross.magnitude),0,1); //use arcsin of the magnitude of targetcross to find the angle, in radians. Torque is proportional to that. Multiply by the normalized axis.
         }
         else
         {
-            interceptPoint = target.transform.position;
+            interceptPoint = target.transform.position; //drive towards the target's last known location
             target = null;
             targetRb = null;
         }

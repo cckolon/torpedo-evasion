@@ -154,18 +154,18 @@ public class zemtorpedo : MonoBehaviour
 
     void HuntTarget()
     {
-        Vector3 relativemotion = targetRb.velocity - rb.velocity.magnitude*transform.forward;
-        Vector3 targetdirection = target.transform.position - transform.position;
-        float targetDist = targetdirection.magnitude;
-        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle)//you've been detected!
+        Vector3 relativemotion = targetRb.velocity - rb.velocity.magnitude*transform.forward; //relative velocity between torpedo and target
+        Vector3 targetdirection = target.transform.position - transform.position; //vector from torpedo to target
+        float targetDist = targetdirection.magnitude; //distance to target
+        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle) //target is detected
         {
-            float tgo = targetdirection.sqrMagnitude/Mathf.Max(Mathf.Abs(Vector3.Dot(relativemotion,targetdirection)),.1f);
-            Vector3 zem = targetdirection + relativemotion*tgo;
-            desiredRotation = Vector3.Cross(transform.forward,zem*(pnGain/Mathf.Clamp(tgo*tgo,10,.1f)));
+            float tgo = targetdirection.sqrMagnitude/Mathf.Max(Mathf.Abs(Vector3.Dot(relativemotion,targetdirection)),.1f); //calculate time to go
+            Vector3 zem = targetdirection + relativemotion*tgo; //calculate orthogonal ZEM
+            desiredRotation = Vector3.Cross(transform.forward,zem*(pnGain/Mathf.Clamp(tgo*tgo,10,.1f))); //rotate the torpedo based on orthogonal ZEM, scaling by a constant pnGain (N)
         }
         else
         {
-            interceptPoint = target.transform.position;
+            interceptPoint = target.transform.position; //drive towards the target's last known location
             target = null;
             targetRb = null;
         }

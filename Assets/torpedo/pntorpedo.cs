@@ -154,19 +154,19 @@ public class pntorpedo : MonoBehaviour
 
     void HuntTarget()
     {
-        Vector3 relativemotion = targetRb.velocity - rb.velocity.magnitude*transform.forward;
-        Vector3 targetdirection = target.transform.position - transform.position;
-        float targetDist = targetdirection.magnitude;
-        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle)//you've been detected!
+        Vector3 relativemotion = targetRb.velocity - rb.velocity.magnitude*transform.forward; //relative velocity between torpedo and target
+        Vector3 targetdirection = target.transform.position - transform.position; //vector from torpedo to target
+        float targetDist = targetdirection.magnitude; //distance to target
+        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle) //target is detected
         {
-            float relativebearing = Vector3.SignedAngle(transform.forward,targetdirection,Vector3.up);
-            float nextrelativebearing = Vector3.SignedAngle(transform.forward,targetdirection+relativemotion*Time.fixedDeltaTime,Vector3.up);
-            desiredRotation = Vector3.Cross(transform.up, Vector3.up-transform.forward*Mathf.Clamp(target.transform.position.y-transform.position.y+((transform.eulerAngles.x+180)%360-180)/2,-20,20)/10);
-            desiredRotation += transform.up*pnGain*(nextrelativebearing - relativebearing)/Time.fixedDeltaTime;
+            float relativebearing = Vector3.SignedAngle(transform.forward,targetdirection,Vector3.up); //relative bearing to target
+            float nextrelativebearing = Vector3.SignedAngle(transform.forward,targetdirection+relativemotion*Time.fixedDeltaTime,Vector3.up); //calculate next relative bearing using relative motion and system time step
+            desiredRotation = Vector3.Cross(transform.up, Vector3.up-transform.forward*Mathf.Clamp(target.transform.position.y-transform.position.y+((transform.eulerAngles.x+180)%360-180)/2,-20,20)/10); //set the desired rotation to maintain torpedo upright and seek appropriate depth
+            desiredRotation += transform.up*pnGain*(nextrelativebearing - relativebearing)/Time.fixedDeltaTime; //add a torque proportional to the rate of change of bearing between torpedo and target
         }
         else
         {
-            interceptPoint = target.transform.position;
+            interceptPoint = target.transform.position; //drive towards the target's last known location
             target = null;
             targetRb = null;
         }

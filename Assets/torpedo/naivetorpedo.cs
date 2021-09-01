@@ -152,16 +152,16 @@ public class naivetorpedo : MonoBehaviour
 
     void HuntTarget()
     {
-        Vector3 targetdirection = target.transform.position - transform.position;
-        float targetDist = targetdirection.magnitude;
-        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle)//you've been detected!
+        Vector3 targetdirection = target.transform.position - transform.position; //vector from torpedo to target
+        float targetDist = targetdirection.magnitude; //distance to target
+        if (targetDist<detectionRange/3.3 & Vector3.Dot((target.transform.position-transform.position).normalized,transform.forward.normalized)>cosdetectionangle)//target is detected
         {
             Vector3 targetCross = Vector3.Cross(transform.forward.normalized,targetdirection.normalized); //use the cross product to find angle between where the torp is pointing and where it needs to point
             desiredRotation = targetCross.normalized*Mathf.Clamp(10*Mathf.Asin(targetCross.magnitude),0,1)+Vector3.Cross(transform.up,Vector3.up); //use arcsin of the magnitude of targetcross to find the angle, in radians. Torque is proportional to that. Multiply by the normalized axis.
         }
         else
         {
-            interceptPoint = target.transform.position;
+            interceptPoint = target.transform.position; //drive towards the target's last known location
             target = null;
             targetRb = null;
         }
