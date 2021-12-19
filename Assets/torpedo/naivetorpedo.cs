@@ -204,10 +204,11 @@ public class naivetorpedo : MonoBehaviour
 
     IEnumerator Report()
     {
-        print("In " + runTime + " seconds, naive algorithm achieved " + collisions + " collisions.");
-        print("Collision rate: "+ collisions/runTime);
-        print("Speed: "+ oldspeed);
-        print("Turn rate: " + turnSpeed);
+        //print("In " + runTime + " seconds, naive algorithm achieved " + collisions + " collisions.");
+        //print("Collision rate: "+ collisions/runTime);
+        //print("Speed: "+ oldspeed);
+        //print("Turn rate: " + turnSpeed);
+        print("Turn rate: " + turnSpeed + ", Collisions: " + collisions);
         yield return new WaitForSeconds(.1f);
     }
 }

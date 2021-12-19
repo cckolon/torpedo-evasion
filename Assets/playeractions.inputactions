@@ -23,9 +23,9 @@
                 },
                 {
                     "name": "Ballast",
-                    "type": "Value",
+                    "type": "Button",
                     "id": "13e1ae43-bfb9-4c5c-a604-abb9b115a9a8",
-                    "expectedControlType": "Axis",
+                    "expectedControlType": "Button",
                     "processors": "",
                     "interactions": ""
                 },

@@ -163,7 +163,7 @@ public class leadtorpedo : MonoBehaviour
             float tgo = targetdirection.sqrMagnitude/Mathf.Max(Mathf.Abs(Vector3.Dot(relativemotion,targetdirection)),.1f); //calculate time to go
             interceptPoint = target.transform.position + targetRb.velocity*tgo; //calculate intercept point based on target's velocity (linear)
             interceptMarker.position = interceptPoint; //move red intercept marker to display intercept point
-            Vector3 targetCross = Vector3.Cross(transform.forward.normalized,targetdirection.normalized); //use the cross product to find angle between where the torp is pointing and where it needs to point
+            Vector3 targetCross = Vector3.Cross(transform.forward.normalized,(interceptPoint-transform.position).normalized); //use the cross product to find angle between where the torp is pointing and where it needs to point
             desiredRotation = targetCross.normalized*Mathf.Clamp(10*Mathf.Asin(targetCross.magnitude),0,1); //use arcsin of the magnitude of targetcross to find the angle, in radians. Torque is proportional to that. Multiply by the normalized axis.
         }
         else
@@ -212,10 +212,11 @@ public class leadtorpedo : MonoBehaviour
 
     IEnumerator Report()
     {
-        print("In " + runTime + " seconds, lead algorithm achieved " + collisions + " collisions.");
-        print("Collision rate: "+ collisions/runTime);
-        print("Speed: "+ oldspeed);
-        print("Turn rate: " + turnSpeed);
+        //print("In " + runTime + " seconds, lead algorithm achieved " + collisions + " collisions.");
+        //print("Collision rate: "+ collisions/runTime);
+        //print("Speed: "+ oldspeed);
+        //print("Turn rate: " + turnSpeed);
+        print("Turn rate: " + turnSpeed + ", Collisions: " + collisions);
         yield return new WaitForSeconds(.1f);
     }
 }

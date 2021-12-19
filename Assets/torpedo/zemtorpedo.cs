@@ -24,7 +24,7 @@ public class zemtorpedo : MonoBehaviour
     float cosdetectionangle;
     float lastTime;
     float waterheight;
-    GameObject waterline;
+    public GameObject waterline;
     Vector3 desiredRotation;
     Vector3 interceptPoint;
     Vector3 lastVelocity;
@@ -109,9 +109,8 @@ public class zemtorpedo : MonoBehaviour
     }
 
     void Die(){
-        //var exp = Instantiate(explosion,transform.position,transform.rotation);
-        //Destroy(gameObject);
-        StartCoroutine("DisableForTest");
+        var exp = Instantiate(explosion,transform.position,transform.rotation);
+        Destroy(gameObject);
     }
 
     void DetectEnemy()
@@ -161,7 +160,7 @@ public class zemtorpedo : MonoBehaviour
         {
             float tgo = targetdirection.sqrMagnitude/Mathf.Max(Mathf.Abs(Vector3.Dot(relativemotion,targetdirection)),.1f); //calculate time to go
             Vector3 zem = targetdirection + relativemotion*tgo; //calculate orthogonal ZEM
-            desiredRotation = Vector3.Cross(transform.forward,zem*(pnGain/Mathf.Clamp(tgo*tgo,10,.1f))); //rotate the torpedo based on orthogonal ZEM, scaling by a constant pnGain (N)
+            desiredRotation = Vector3.Cross(transform.forward,zem*(pnGain/Mathf.Max(tgo,.1f))); //rotate the torpedo based on orthogonal ZEM, scaling by a constant pnGain (N) - replace 1f with tgo
         }
         else
         {
@@ -193,7 +192,7 @@ public class zemtorpedo : MonoBehaviour
 
     private IEnumerator WaitAndEnable()
     {
-        yield return new WaitForSeconds(1.0f);
+        yield return new WaitForSeconds(5.0f);
         SetCollider(true);
     }
 
@@ -209,10 +208,11 @@ public class zemtorpedo : MonoBehaviour
 
     IEnumerator Report()
     {
-        print("In " + runTime + " seconds, ZEM algorithm achieved " + collisions + " collisions.");
-        print("Collision rate: "+ collisions/runTime);
-        print("Speed: "+ oldspeed);
-        print("Turn rate: " + turnSpeed);
+        //print("In " + runTime + " seconds, ZEM algorithm achieved " + collisions + " collisions.");
+        //print("Collision rate: "+ collisions/runTime);
+        //print("Speed: "+ oldspeed);
+        //print("Turn rate: " + turnSpeed);
+        print("Turn rate: " + turnSpeed + ", Collisions: " + collisions);
         yield return new WaitForSeconds(.1f);
     }
 }

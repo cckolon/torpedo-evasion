@@ -9,25 +9,23 @@ public class testManager : MonoBehaviour
     public GameObject submarine;
     public Transform torpedoStartLocation;
     public Transform submarineStartLocation;
-    public float minutesToTest;
+    public int numberOfTests;
     public float minTurnSpeed;
     public float maxTurnSpeed;
     public float turnSpeedIncrement;
     bool testingnow = false;
-    int numberoftests;
     // Start is called before the first frame update
     void Start()
     {
-        numberoftests = (int)(minutesToTest*60/torpedoRunTime);
-        turnSpeedIncrement = (maxTurnSpeed-minTurnSpeed)/(numberoftests-1);
+        turnSpeedIncrement = (maxTurnSpeed-minTurnSpeed)/(numberOfTests-1);
     }
 
     // Update is called once per frame
     void Update()
     {
-        if (!testingnow && numberoftests > 0)
+        if (!testingnow && numberOfTests > 0)
         {
-            numberoftests -= 1;
+            numberOfTests -= 1;
             SetTesting(true);
             StartCoroutine("TestTorp");
             minTurnSpeed = minTurnSpeed + turnSpeedIncrement;
@@ -42,7 +40,7 @@ public class testManager : MonoBehaviour
     IEnumerator TestTorp()
     {
         submarine.transform.position = submarineStartLocation.position;
-        submarine.transform.rotation = submarineStartLocation.rotation;
+        submarine.transform.rotation = submarineStartLocation.rotation * Quaternion.Euler(0,Random.Range(0,360),0);
         GameObject torp = Instantiate(torpedo,torpedoStartLocation.position,torpedoStartLocation.rotation);
         torp.GetComponent<zemtorpedo>().turnSpeed = minTurnSpeed;
         yield return new WaitForSeconds(torpedoRunTime+1f);

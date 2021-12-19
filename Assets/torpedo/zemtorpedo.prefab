@@ -190,14 +190,16 @@ MonoBehaviour:
   detectionAngle: 90
   runTime: 180
   turnSpeed: 0.22
-  sourceLevel: 0
+  sourceLevel: 100
   pnGain: 5
   shooter: {fileID: 0}
   transitVector: {x: 0, y: 0, z: 0}
   target: {fileID: 0}
-  explosion: {fileID: 0}
+  explosion: {fileID: 944332931204754054, guid: a27a5ccab83b8574bbcb99e29ef3bc00,
+    type: 3}
   targetList: []
   enable: 0
+  waterline: {fileID: 0}
 --- !u!1 &3835025778283481884
 GameObject:
   m_ObjectHideFlags: 0
@@ -798,7 +800,7 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     randomizeRotationDirection: 0
-    maxNumParticles: 1000
+    maxNumParticles: 3000
     size3D: 0
     rotation3D: 0
     gravityModifier:

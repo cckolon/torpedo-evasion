@@ -50,7 +50,6 @@ public class rabbit : MonoBehaviour
     public float maxDI;
     public float maxAngleTorque;
     public float orderedHeading;
-    bool slr = false;
     bool[] flooding = {false,false,false};
     float[] floodwater = new float[3];
     public bool jamplane = false;
@@ -418,12 +417,12 @@ public class rabbit : MonoBehaviour
 
     IEnumerator SLR()
     {
-        slr = true;
+        //slr = true;
         bell = 0;
         yield return new WaitForSeconds(Random.Range(10,20));
         yield return new WaitForSeconds(Random.Range(10,20));
         yield return new WaitForSeconds(Random.Range(10,20));
-        slr = false;
+        //slr = false;
     }
 
     IEnumerator GroundingDelay()

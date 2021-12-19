@@ -25,6 +25,8 @@ public class playersub : MonoBehaviour
     public float ballastSpeed;
     public float turnSpeed;
     public Camera maincam;
+    public bool cavitation;
+    public ParticleSystem cavitationTrail;
     bool lookactive = false;
     float zoomspeed = .1f;
     public Transform[] floatpoints = new Transform[3];
@@ -51,6 +53,7 @@ public class playersub : MonoBehaviour
     public RectTransform fineAngleNeedle;
     public RectTransform orderedAngleNeedle;
     public GameObject[] casualtySymbols = new GameObject[3];
+    public GameObject torpedo;
     public Color oceanFog;
     public Color airFog;
     public float waveHeight;
@@ -58,9 +61,6 @@ public class playersub : MonoBehaviour
     public float coeffP;
     public float coeffI;
     public float coeffD;
-    public float coeffDP;
-    public float coeffDI;
-    public float coeffDD;
     public float maxDI;
     public float maxAngleTorque;
     public float orderedHeading;
@@ -89,9 +89,13 @@ public class playersub : MonoBehaviour
     bool groundingpermitted = true;
     public float health;
     public float length;
+    public float sourceLevel;
     string[] bellnames = {"All Back Emergency","All Back Two Thirds","All Back One Third","All Stop","All Ahead One Third","All Ahead Two Thirds","All Ahead Standard","All Ahead Full","All Ahead Flank"};
     string[] ruddernames = {"Left Hard Rudder","Left Full Rudder","Left 20° Rudder","Left 15° Rudder","Left 10° Rudder","Left 5° Rudder","Rudder Amidships","Right 5° Rudder","Right 10° Rudder","Right 15° Rudder", "Right 20° Rudder", "Right Full Rudder","Right Hard Rudder"};
     string[] cardinals = {"North","East","South","West"};
+    bool floodingrepair = false;
+    public float torpedoReloadTime;
+    public float lastShotTime;
     // Start is called before the first frame update
     void Start()
     {
@@ -116,10 +120,20 @@ public class playersub : MonoBehaviour
         {
             i.GetComponent<Image>().sprite = emptySprite;
         }
+        if (cavitation)
+        {
+            cavitationTrail.Play();
+        }
+        else
+        {
+            cavitationTrail.Stop();
+        }
         eotNeedle.RotateAround(eotNeedle.parent.position,Vector3.forward,-bell*30);
         InvokeRepeating("SecondLoop",0f,1.0f);
         OnAuto();
         OnReset();
+        orderedDepth = (waterheight - transform.position.y)*10 + 40;
+        lastShotTime = -torpedoReloadTime;
     }
 
     // Update is called once per frame
@@ -144,30 +158,26 @@ public class playersub : MonoBehaviour
     void SecondLoop()
     {
         Sounding();
+        AcousticCalc();
     }
 
     void AutoPilot()
     {
         float depthError = depth - orderedDepth;
-        depthI = depthI + depthError*Time.fixedDeltaTime;
-        float depthD = (depthError-lastDepthError)/Time.fixedDeltaTime;
-        lastDepthError = depthError;
-        float depthSignal = (depthError * coeffDP + depthI*coeffDI + depthD*coeffDD)/Mathf.Min(1,Mathf.Abs(bell));
-        if (Mathf.Abs(depthI) > maxDI)
-        {
-            depthI = maxDI*Mathf.Sign(depthI);
-        }
+        float depthSignal = (depthError/5-rb.velocity.y*10);
+        orderedballast = Mathf.Clamp(ballast - buoyancy + depthError/(10-Mathf.Abs(bell)) - rb.velocity.y*20+60*(embtstatus ? 1 : 0),-50,50);
+        float maxpitch = Mathf.Clamp((depth-50)/5,0,30);
         if (transform.InverseTransformVector(rb.velocity).z > .5)
         {
-            orderedpitch = Mathf.Clamp(depthSignal*5/5+orderedpitch*0/5,-30,30);
+            orderedpitch = Mathf.Clamp(depthSignal*5/5+orderedpitch*0/5,-30,maxpitch);
         }
-        else if (transform.InverseTransformVector(rb.velocity).z < .5)
+        else if (transform.InverseTransformVector(rb.velocity).z < -.5)
         {
-            orderedpitch = Mathf.Clamp(-depthSignal*5/5-orderedpitch*0/5,-30,30);
+            orderedpitch = Mathf.Clamp(-depthSignal*5/5-orderedpitch*0/5,-30,maxpitch);
         }
         else
         {
-            orderedpitch = 0;
+            orderedpitch = Mathf.Clamp(depthSignal*5/5+orderedpitch*0/5,-30,maxpitch)*2*transform.InverseTransformVector(rb.velocity).z;
         }
         orderedAngleNeedle.localPosition = new Vector3(orderedAngleNeedle.localPosition.x,Mathf.Clamp(((orderedpitch+180)%360-180),-30,30)*4,0);
         if (jamrudder)
@@ -199,7 +209,6 @@ public class playersub : MonoBehaviour
         if (jamplane)
         {
             rb.AddRelativeTorque(jamdirection*maxAngleTorque*transform.InverseTransformVector(rb.velocity).z*12/topspeed*(new Vector3(1,0,0)));
-           // rb.AddRelativeTorque(12/topspeed*torqueSignal);
             sternplanes.transform.rotation = Quaternion.RotateTowards(sternplanes.transform.rotation,transform.rotation*Quaternion.Euler(90-Mathf.Clamp(jamdirection*30,-30,30),0,0),30f*Time.fixedDeltaTime);
         }
         else
@@ -237,12 +246,34 @@ public class playersub : MonoBehaviour
         }
     }
 
+    void AcousticCalc()
+    {
+        if (Mathf.Abs(bell)> depth/125+1 && !cavitation)
+        {
+            cavitation = true;
+            cavitationTrail.Play();
+            AddEvent("Conn, Sonar, we are cavitating.");
+        }
+        else if (Mathf.Abs(bell) < depth/125+1 && cavitation)
+        {
+            cavitation = false;
+            cavitationTrail.Stop();
+            AddEvent("Conn, Sonar, no longer cavitating.");
+        }
+        sourceLevel = rb.velocity.magnitude*6 + 40 + (cavitation ? 50 : 0);
+    }
+
     void UIUpdate()
     {
+        float adjustedbuoyancy = buoyancy;
+        if (flooding[0] | flooding[1] | flooding[2])
+        {
+            adjustedbuoyancy = adjustedbuoyancy - 150*(floodwater[0]+floodwater[1]+floodwater[2]);
+        }
         crs.text=string.Format("{0:D3}", ((int)transform.rotation.eulerAngles.y) % 360);
         spd.text=string.Format("{0:N1}", rb.velocity.magnitude*6);
         dep.text=string.Format("{0:N0}", depth);
-        bal.text=string.Format("{0:N0}", Mathf.Abs(buoyancy));
+        bal.text=string.Format("{0:N0}", Mathf.Abs(adjustedbuoyancy));
         if (autocontrol)
         {
             if (Mathf.Abs(depth-orderedDepth) < 25)
@@ -280,11 +311,11 @@ public class playersub : MonoBehaviour
                 ordBal.text = string.Format("{0:N0}", orderedballast - ballast);
             }
         }
-        if (buoyancy > .5)
+        if (adjustedbuoyancy > .5)
         {
             balhl.text = "LIGHT OVERALL";
         }
-        else if (buoyancy < -.5)
+        else if (adjustedbuoyancy < -.5)
         {
             balhl.text = "HEAVY OVERALL";
         }
@@ -324,13 +355,13 @@ public class playersub : MonoBehaviour
     {
         if (autocontrol)
         {
-            orderedDepth = Mathf.Max(0,Mathf.Round((orderedDepth + 50*input.Get<float>())/50)*50);
+            orderedDepth = Mathf.Max(30,Mathf.Round((orderedDepth + 50*input.Get<float>())/50)*50);
             StopCoroutine("AnnounceDepth");
             StartCoroutine("AnnounceDepth");
         }
         else
         {
-            orderedpitch = Mathf.Clamp(orderedpitch + 5*input.Get<float>(),-30,30);
+            orderedpitch = Mathf.Clamp(Mathf.Round((orderedpitch + 5*input.Get<float>())/5)*5,-30,30);
             orderedAngleNeedle.localPosition = new Vector3(orderedAngleNeedle.localPosition.x,Mathf.Clamp(((orderedpitch+180)%360-180),-30,30)*4,0);
             StopCoroutine("AnnouncePitch");
             StartCoroutine("AnnouncePitch");            
@@ -362,9 +393,15 @@ public class playersub : MonoBehaviour
 
     void OnBallast(InputValue input)
     {
-        orderedballast = Mathf.Clamp(orderedballast + 10*input.Get<float>(),-50,50);
-        StopCoroutine("AnnounceBallast");
-        StartCoroutine("AnnounceBallast");   
+        if (!autocontrol)
+        {
+            int roundedbuoyancy = (int)((buoyancy-ballast+orderedballast)/4.9)*5+(int)input.Get<float>()*5;        
+            print((buoyancy-ballast+orderedballast));
+            print(input.Get<float>());
+            orderedballast = Mathf.Clamp(roundedbuoyancy-buoyancy+ballast,-50,50);
+            StopCoroutine("AnnounceBallast");
+            StartCoroutine("AnnounceBallast");   
+        }
     }
 
     void OnSpeed(InputValue input)
@@ -388,7 +425,6 @@ public class playersub : MonoBehaviour
             orderedHeading = transform.rotation.eulerAngles.y;
             orderedDepth = depth;
             orderedballast = ballast - buoyancy;
-            depthI = 0;
             AddEvent("Steady as she goes, Pilot aye.");
             AddEvent(string.Format("OOD, she goes {0:D3}.",(int)orderedHeading));
             AddEvent(string.Format("Coming to depth {0:N0} feet.",orderedDepth));
@@ -397,14 +433,16 @@ public class playersub : MonoBehaviour
         else
         {
             orderedpitch = 0;
-            if (!jamrudder)
-            {
-                rudder = 0;
-            }
+
             orderedballast = ballast - buoyancy;
             orderedAngleNeedle.localPosition = new Vector3(orderedAngleNeedle.localPosition.x,Mathf.Clamp(((orderedpitch+180)%360-180),-30,30)*4,0);
-            AddEvent("Rudder amidships, 0° bubble, Pilot aye.");
-            AddEvent("OOD, My rudder is amidships. 0° bubble.");
+            if (!jamrudder)
+            {
+                AddEvent("Rudder amidships, 0° bubble, Pilot aye.");
+                rudder = 0;
+                AddEvent("OOD, My rudder is amidships. 0° bubble.");
+            }
+            else
             AddEvent("Ballasting for neutral trim.");
         }
     }
@@ -416,6 +454,7 @@ public class playersub : MonoBehaviour
             AddEvent("Emergency surface the ship, Pilot aye.");
             embtstatus = true;
             embtavailable = false;
+            orderedDepth = 30;
             StartCoroutine("EMBTblow");
         }
         else
@@ -433,6 +472,18 @@ public class playersub : MonoBehaviour
         }
     }
 
+    void OnShoot()
+    {
+        if (Time.time - lastShotTime > torpedoReloadTime)
+        {
+            GameObject newtorp = Instantiate(torpedo,transform.TransformPoint(new Vector3(0,0,0)),transform.rotation);
+            newtorp.GetComponent<zemtorpedo>().shooter = gameObject;
+            newtorp.GetComponent<zemtorpedo>().transitVector = maincam.transform.forward;
+            newtorp.GetComponent<Rigidbody>().velocity = rb.velocity + transform.forward*30.0f;
+            lastShotTime = Time.time;
+        }
+    }
+
     void OnAuto()
     {
         autocontrol = !autocontrol;
@@ -443,7 +494,6 @@ public class playersub : MonoBehaviour
         {
             orderedHeading = transform.rotation.eulerAngles.y;
             orderedDepth = depth;
-            depthI = 0;
             AddEvent("OOD, taking automatic control.");
             AddEvent(string.Format("Ordered course is {0:D3}.",((int)orderedHeading))+ string.Format(" Ordered depth is {0:N0} feet.",orderedDepth));
         }
@@ -598,18 +648,23 @@ public class playersub : MonoBehaviour
         {
             if (flooding[i])
             {
-                floodwater[i] = Mathf.Clamp(floodwater[i] + (Mathf.Sqrt(depth)-13)*Time.fixedDeltaTime/1000,0,1);
+                floodwater[i] = Mathf.Clamp(floodwater[i] + (Mathf.Sqrt(Mathf.Max(depth,0))-13)*Time.fixedDeltaTime/1000,0,1); // Floodwater is between 0 and 1.
                 if (floodwater[i] == 0)
                 {
-                    StartCoroutine("FloodRepair");
-                    emergencyText[i].text = string.Format("Repairing");
+                    if (floodingrepair == false)
+                    {
+                        floodingrepair = true;
+                        StartCoroutine("FloodRepair");
+                        emergencyText[i].text = string.Format("Repairing");
+                    }
                 }
                 else
                 {
+                    floodingrepair = false;
                     StopCoroutine("FloodRepair");
                     emergencyText[i].text = string.Format("{0:N0}% Flooded",floodwater[i]*100);
                 }
-                rb.AddForceAtPosition(Vector3.down*floodwater[i]*3f,floatpoints[i].position);
+                rb.AddForceAtPosition(Vector3.down*floodwater[i]*3f,floatpoints[i].position); // A floodwater value of 1 produces a downward force of 3
             }
         }
     }
@@ -700,10 +755,10 @@ public class playersub : MonoBehaviour
         }
         if ((int)orderedHeading % 90 == 0)
         {
-            AddEvent("Come " + direction + ", steer course " + cardinals[(int)(orderedHeading/90)] + ", Pilot aye.");
+            AddEvent("Come " + direction + " to " + cardinals[(int)(orderedHeading/90)] + ", Pilot aye.");
         }
         else{
-            AddEvent(string.Format("Come " + direction + ", steer course {0:D3}, Pilot aye.",(int)orderedHeading));
+            AddEvent(string.Format("Come " + direction + " to {0:D3}, Pilot aye.",(int)orderedHeading));
         }
         yield return new WaitForSeconds(1f);
         AddEvent("OOD, my rudder is " + direction + ".");
