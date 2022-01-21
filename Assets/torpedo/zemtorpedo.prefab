@@ -119,7 +119,7 @@ GameObject:
   - component: {fileID: 3835025777175837918}
   - component: {fileID: 3835025777175837905}
   - component: {fileID: 3835025777175837906}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: zemtorpedo
   m_TagString: torpedo
   m_Icon: {fileID: 0}
@@ -185,11 +185,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3866d1f2d7d2c5e4789a5ca593a5c709, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  speed: 50
-  detectionRange: 20000
-  detectionAngle: 90
-  runTime: 180
-  turnSpeed: 0.22
+  speed: 60
+  detectionRange: 2000
+  detectionAngle: 60
+  runTime: 90
+  turnSpeed: 0.17
   sourceLevel: 100
   pnGain: 5
   shooter: {fileID: 0}

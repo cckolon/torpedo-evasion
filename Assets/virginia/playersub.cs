@@ -48,11 +48,13 @@ public class playersub : MonoBehaviour
     public Text ordDep;
     public Text ordCrs;
     public Text ordBal;
+    public Text bigText;
     public RectTransform eotNeedle;
     public RectTransform courseAngleNeedle;
     public RectTransform fineAngleNeedle;
     public RectTransform orderedAngleNeedle;
     public GameObject[] casualtySymbols = new GameObject[3];
+    public Image[] torpTubes = new Image[4];
     public GameObject torpedo;
     public Color oceanFog;
     public Color airFog;
@@ -74,6 +76,7 @@ public class playersub : MonoBehaviour
     public Text[] emergencyText = new Text[3];
     public bool jamplane = false;
     public bool jamrudder = false;
+    public GameObject controlScreen;
     int jamdirection = 1; // positive is dive/right
     List<string> eventlog = new List<string>();
     public int eventListLength;
@@ -95,7 +98,8 @@ public class playersub : MonoBehaviour
     string[] cardinals = {"North","East","South","West"};
     bool floodingrepair = false;
     public float torpedoReloadTime;
-    public float lastShotTime;
+    public float[] lastShotTime = new float[4];
+    public float timeWarpFactor;
     // Start is called before the first frame update
     void Start()
     {
@@ -128,12 +132,13 @@ public class playersub : MonoBehaviour
         {
             cavitationTrail.Stop();
         }
+        bigText.text = "";
         eotNeedle.RotateAround(eotNeedle.parent.position,Vector3.forward,-bell*30);
         InvokeRepeating("SecondLoop",0f,1.0f);
         OnAuto();
         OnReset();
         orderedDepth = (waterheight - transform.position.y)*10 + 40;
-        lastShotTime = -torpedoReloadTime;
+        lastShotTime = new float[] {-torpedoReloadTime,-torpedoReloadTime,-torpedoReloadTime,-torpedoReloadTime};
     }
 
     // Update is called once per frame
@@ -159,6 +164,7 @@ public class playersub : MonoBehaviour
     {
         Sounding();
         AcousticCalc();
+        CheckForOthers();
     }
 
     void AutoPilot()
@@ -192,7 +198,7 @@ public class playersub : MonoBehaviour
 
     void AnglePID()
     {
-        Vector3 angleError = new Vector3(pitchSpeed*(-orderedpitch-(transform.eulerAngles.x+180)%360+180),0,rollSpeed*(-rudder-(transform.eulerAngles.z+180)%360+180));
+        Vector3 angleError = new Vector3(pitchSpeed*(-orderedpitch-(transform.eulerAngles.x+180)%360+180),0,rollSpeed*(-rudder*Mathf.Clamp01(transform.InverseTransformVector(rb.velocity).z/3)-(transform.eulerAngles.z+180)%360+180));
         angleI = angleI + angleError*Time.fixedDeltaTime;
         Vector3 angleD = (angleError - lastAngleError)/Time.fixedDeltaTime;
         lastAngleError = angleError;
@@ -260,7 +266,7 @@ public class playersub : MonoBehaviour
             cavitationTrail.Stop();
             AddEvent("Conn, Sonar, no longer cavitating.");
         }
-        sourceLevel = rb.velocity.magnitude*6 + 40 + (cavitation ? 50 : 0);
+        sourceLevel = rb.velocity.magnitude*6 + 70 + (cavitation ? 50 : 0);
     }
 
     void UIUpdate()
@@ -325,6 +331,18 @@ public class playersub : MonoBehaviour
         }
         courseAngleNeedle.localPosition = new Vector3(courseAngleNeedle.localPosition.x,-Mathf.Clamp(((transform.rotation.eulerAngles.x+180)%360-180),-90,90)*4/3,0);
         fineAngleNeedle.localPosition = new Vector3(fineAngleNeedle.localPosition.x,-Mathf.Clamp(((transform.rotation.eulerAngles.x+180)%360-180),-30,30)*4,0);
+        float now = Time.time;
+        for(int i = 0; i < lastShotTime.Length; i++)
+        {
+            if (now - lastShotTime[i]>torpedoReloadTime)
+            {
+                torpTubes[i].color = Color.green;
+            }
+            else
+            {
+                torpTubes[i].color = Color.red;
+            }
+        }
     }
 
     void AddEvent(string e)
@@ -396,8 +414,6 @@ public class playersub : MonoBehaviour
         if (!autocontrol)
         {
             int roundedbuoyancy = (int)((buoyancy-ballast+orderedballast)/4.9)*5+(int)input.Get<float>()*5;        
-            print((buoyancy-ballast+orderedballast));
-            print(input.Get<float>());
             orderedballast = Mathf.Clamp(roundedbuoyancy-buoyancy+ballast,-50,50);
             StopCoroutine("AnnounceBallast");
             StartCoroutine("AnnounceBallast");   
@@ -474,13 +490,37 @@ public class playersub : MonoBehaviour
 
     void OnShoot()
     {
-        if (Time.time - lastShotTime > torpedoReloadTime)
+        bool shotpermitted = false;
+        int readytube = 0;
+        int numreadytubes = 0;
+        float now = Time.time;
+        for (int i=0; i<lastShotTime.Length; i++)
+        {
+            if(now - lastShotTime[i]>torpedoReloadTime)
+            {
+                if (!shotpermitted)
+                {
+                    shotpermitted = true;
+                    readytube = i;
+                    numreadytubes = 1;
+                }
+                else
+                {
+                    numreadytubes += 1;
+                    if (Random.Range(0,numreadytubes)<1) // balance the tree so all tubes are equally likely
+                    {
+                        readytube = i;
+                    }
+                }
+            }
+        }
+        if (shotpermitted)
         {
             GameObject newtorp = Instantiate(torpedo,transform.TransformPoint(new Vector3(0,0,0)),transform.rotation);
             newtorp.GetComponent<zemtorpedo>().shooter = gameObject;
             newtorp.GetComponent<zemtorpedo>().transitVector = maincam.transform.forward;
             newtorp.GetComponent<Rigidbody>().velocity = rb.velocity + transform.forward*30.0f;
-            lastShotTime = Time.time;
+            lastShotTime[readytube] = Time.time;
         }
     }
 
@@ -524,13 +564,30 @@ public class playersub : MonoBehaviour
         maincam.transform.Translate((Vector3.forward)*input.Get<float>()*zoomspeed);
     }
 
+    void OnHelp()
+    {
+        controlScreen.SetActive(!controlScreen.activeInHierarchy);
+    }
+
+    void OnTimeWarp()
+    {
+        if (Time.timeScale > 1.0f)
+        {
+            Time.timeScale = 1.0f;
+        }
+        else
+        {
+            Time.timeScale = timeWarpFactor;
+        }
+    }
+
     public void OnCollisionEnter(Collision col)
     {
         Vector3 collisionpoint = transform.InverseTransformPoint(col.contacts[0].point);
         int floodlocation = (int)(collisionpoint.z*3/length+1.5);
         if (floodlocation > 2){floodlocation = 2;}
         if (floodlocation <0 ){floodlocation =0;}
-        if (col.gameObject.tag == "Torpedo")
+        if (col.gameObject.tag == "torpedo")
         {
             health = health - 1f;
             CauseCasualty(floodlocation);
@@ -669,9 +726,25 @@ public class playersub : MonoBehaviour
         }
     }
 
+    void Win()
+    {
+        bigText.text = "YOU WIN!";
+    }
+
     void Die()
     {
-        AddEvent("You Died.");
+        bigText.text = "YOU LOSE";
+    }
+
+    void CheckForOthers()
+    {
+        GameObject[] torpedos = GameObject.FindGameObjectsWithTag("torpedo");
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+        GameObject[] aiPlayers = GameObject.FindGameObjectsWithTag("AIPlayer");
+        if (torpedos.Length == 0 & players.Length == 1 & aiPlayers.Length == 0)
+        {
+            Win();
+        }
     }
 
     IEnumerator EMBTblow()

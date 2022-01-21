@@ -12,7 +12,6 @@ using System.Linq;
 
 public class sonarscript : MonoBehaviour
 {
-    public Texture2D screenTemplate;
     Texture2D screen;
     public int width;
     public int height;
@@ -22,34 +21,34 @@ public class sonarscript : MonoBehaviour
     public List<GameObject> noisythings = new List<GameObject>();
     public List<float> sourceLevels = new List<float>();
     public GameObject subject;
+    public GameObject waterline;
     public Camera mainCamera;
     public float subjectSourceLevel;
     public float noiseLevel;
-    public int heading;
-    public int lastHeading;
+    public float heading;
+    public float lastHeading;
     public float sonarInterval; // seconds
     public float le;
     public int baffledRegion;
-    public int subjectHeading;
+    public float subjectHeading;
     public Vector3 subjectPosition;
+    Color[] screenarray = new Color[720*360];
+    Color[] lasttickbackground = new Color[1800];
     // Start is called before the first frame update
-    Color[] screenarray = new Color[360*60];
     void Start()
     {
         subject = transform.parent.transform.parent.gameObject;
-        mipCount = screenTemplate.mipmapCount;
-        width = screenTemplate.width;
-        height = screenTemplate.height;
         screen = new Texture2D(width,height);
-        screen.SetPixels(screenTemplate.GetPixels());
-        Color[] screenarray = new Color[width*height];
         for (int i=0; i<screenarray.Length; i++)
         {
             screenarray[i] = Color.black;
+            screenarray[i].a = 1f;
         }
         screen.SetPixels(screenarray);
-        screen.Apply(false);
+        screen.Apply(true);
         gameObject.GetComponent<RawImage>().texture = screen;
+        waterline = GameObject.FindGameObjectWithTag("Waterline");
+        le = waterline.GetComponent<environmental>().le;
         InvokeRepeating("RefreshDisplay",0f,sonarInterval);
         InvokeRepeating("RefreshList",0f,2);
     }
@@ -63,26 +62,28 @@ public class sonarscript : MonoBehaviour
         lastHeading=heading;
         if (mainCamera != null)
         {
-            heading = (int)mainCamera.transform.rotation.eulerAngles.y;
+            heading = 360f/width*(int)((width/360f)*mainCamera.transform.rotation.eulerAngles.y);
         }
         if (subject != null)
         {
-            subjectHeading = (int)subject.transform.rotation.eulerAngles.y;
+            subjectHeading = 360f/width*(int)((width/360f)*subject.transform.rotation.eulerAngles.y);
             subjectPosition = subject.transform.position;
         }
-        noiseLevel = (le + subjectSourceLevel-20)/3;
+        noiseLevel = subjectSourceLevel/2;
         for (int j =0; j< (height-1); j++)
         {
             for (int i = 0; i<width; i++)
             {
-                screenarray[j*width+i] = screenarray[(j+1)*width+((heading-lastHeading+i)%360)];
+                screenarray[j*width+i] = screenarray[((j+1)*width+(int)((i+((heading-lastHeading)*width/360))%width))];
             }
         }
         for (int i = width*(height-1); i<width*height; i++)
         {
-            if((i + heading - subjectHeading)% width> baffledRegion*width/360 && (i + heading - subjectHeading) % width<width-baffledRegion*width/360)
+            if((i + (heading - subjectHeading)*width/360)% width> baffledRegion*width/360 && (i + (heading - subjectHeading)*width/360) % width<width-baffledRegion*width/360)
             {
-                screenarray[i] = Color.green*Random.Range(0,noiseLevel/60);
+                float pixelheading = (i*360/width + heading - subjectHeading)%360;
+                screenarray[i] = lasttickbackground[(int)((i+((heading-lastHeading)*width/360))+Mathf.Round(Random.Range(0,250*EasySin(pixelheading))/50))%width]*.8f;
+                screenarray[i] += Color.green*Random.Range(0,(noiseLevel+le-35)/100)*.2f;
                 screenarray[i].a = 1f;
             }
             else
@@ -90,20 +91,42 @@ public class sonarscript : MonoBehaviour
                 screenarray[i] = Color.black;
             }
         }
+        for (int i=0;i<width;i++)
+        {
+            lasttickbackground[i]=screenarray[width*(height-1)+i];
+        }
         for (int i = 0; i<noisythings.Count(); i++)
         {
             if (noisythings[i] != null)
             {
-                int brg = 180 + (int)Vector3.SignedAngle(new Vector3(Mathf.Sin(heading*Mathf.PI/180),0,Mathf.Cos(heading*Mathf.PI/180)),Vector3.ProjectOnPlane((noisythings[i].transform.position - subjectPosition),Vector3.up),Vector3.up);
-                float snr = sourceLevels[i] - 10*Mathf.Log(3*(subjectPosition-noisythings[i].transform.position).magnitude,10)-noiseLevel;
-                if((brg + heading - subjectHeading)% 360> baffledRegion && (brg + heading - subjectHeading) % 360<360-baffledRegion)
+                float brg = 180 + Vector3.SignedAngle(new Vector3(Mathf.Sin(heading*Mathf.PI/180),0,Mathf.Cos(heading*Mathf.PI/180)),Vector3.ProjectOnPlane((noisythings[i].transform.position - subjectPosition),Vector3.up),Vector3.up);
+                float snr = sourceLevels[i] - 10*Mathf.Log(3*(subjectPosition-noisythings[i].transform.position).magnitude,10)-noiseLevel-le;
+                if(((int)brg + heading - subjectHeading)% 360> baffledRegion && ((int)brg + heading - subjectHeading) % 360<360-baffledRegion)
                 {
-                    screenarray[width*(height-1)+brg*width/360-1]+=Color.green*Mathf.Clamp01(Random.Range(0,snr/30));
+                    screenarray[width*(height-1)+(int)(brg*width/360-1)]+=Color.green*Mathf.Clamp01(Random.Range(0,snr/30));
+                    for (int j = 1; j < width/180; j++)
+                    {
+                        screenarray[width*(height-1)+(int)(brg*width/360-1)+j]+=Color.green*Mathf.Clamp01(Random.Range(0,snr/30-j*180f/width));
+                        screenarray[width*(height-1)+(int)(brg*width/360-1)-j]+=Color.green*Mathf.Clamp01(Random.Range(0,snr/30-j*180f/width));
+                    }
+                    if (snr > 30)
+                    {
+                        for (int j = width/180; j< 3*width/360; j++)
+                        {
+                            screenarray[width*(height-1)+(int)(brg*width/360-1)+j]=Color.black;
+                            screenarray[width*(height-1)+(int)(brg*width/360-1)-j]=Color.black;
+                        }
+                    }
                 }
             }
         }
         screen.SetPixels(screenarray);
         screen.Apply(false);
+    }
+
+    float EasySin(float x)
+    {
+        return (2*Mathf.Abs(((x/180-.5f)%2+2)%2-1)-1);
     }
 
     void RefreshList()

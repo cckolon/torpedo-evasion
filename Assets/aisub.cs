@@ -54,6 +54,7 @@ public class aisub : MonoBehaviour
     float lastDepthError;
     Vector3 angleI;
     LayerMask terrain;
+    LayerMask torpedomask;
     public float depthBelowKeel;
     bool groundingpermitted = true;
     public float health;
@@ -74,6 +75,11 @@ public class aisub : MonoBehaviour
     public float tooFarRange;
     public float tooCloseRange;
     public float desiredClosingRate;
+    public GameObject waterline;
+    public Transform closestTorpedo;
+    public Rigidbody closestTorpedorb;
+    public float torpedoDetectionDistance; // in units
+    Vector3 datum; //target's last known position
     // Start is called before the first frame update
     void Start()
     {
@@ -84,6 +90,9 @@ public class aisub : MonoBehaviour
         embteffects = new ParticleSystem[] {transform.Find("EMBTeffects/aft").gameObject.GetComponent<ParticleSystem>(),transform.Find("EMBTeffects/fwd").gameObject.GetComponent<ParticleSystem>()};
         venteffects = new ParticleSystem[] {transform.Find("venteffects/aft").gameObject.GetComponent<ParticleSystem>(),transform.Find("venteffects/fwd").gameObject.GetComponent<ParticleSystem>()};
         terrain = LayerMask.GetMask("Terrain");
+        torpedomask = LayerMask.GetMask("torpedo");
+        waterline = GameObject.FindGameObjectWithTag("Waterline");
+        le = waterline.GetComponent<environmental>().le;
         for (int i = 0; i<2; i++)
         {
             embteffects[i].Stop();
@@ -91,6 +100,7 @@ public class aisub : MonoBehaviour
         }
         InvokeRepeating("SecondLoop",0f,1.0f);
         orderedDepth = (waterheight - transform.position.y)*10 + 40;
+        lastShotTime = -torpedoReloadTime;
         foreach (GameObject i in GameObject.FindGameObjectsWithTag("Player"))
         {
             if (i != gameObject)
@@ -106,20 +116,32 @@ public class aisub : MonoBehaviour
         AnglePID();
         BuoyancyCalc();
         AutoPilot();
-
     }
 
     void SecondLoop()
     {
-        Sounding();
         AcousticCalc();
-        if (target != null)
+        DetectTorpedo();
+        if (jamplane | jamrudder | slr | flooding[0] | flooding[1] | flooding[2])
+        {
+            EmergencyResponse();
+        }
+        else if (closestTorpedo != null)
+        {
+            TorpedoEvasion();
+            OnVent();
+        }
+        else if (target != null)
         {
             HuntSub();
+            Sounding();
+            OnVent();
         }
         else
         {
             Search();
+            Sounding();
+            OnVent();
         }
     }
 
@@ -196,13 +218,24 @@ public class aisub : MonoBehaviour
                 enemies.Add(i);
             }
         }
-        if (Physics.Raycast(transform.position, new Vector3(Mathf.Sin(orderedHeading*Mathf.PI/180),0,Mathf.Cos(orderedHeading*Mathf.PI/180)), 100, terrain))
+        if (datum == Vector3.zero)
         {
-            bell = 1;
-            int newhead = Random.Range(0,359);
-            if (!Physics.Raycast(transform.position,new Vector3(Mathf.Sin(newhead*Mathf.PI/180),0,Mathf.Cos(newhead*Mathf.PI/180)),out hit, 100, terrain))
+            if (Physics.Raycast(transform.position, new Vector3(Mathf.Sin(orderedHeading*Mathf.PI/180),0,Mathf.Cos(orderedHeading*Mathf.PI/180)), 100, terrain))
             {
-                orderedHeading = newhead;
+                bell = 1;
+                int newhead = Random.Range(0,359);
+                if (!Physics.Raycast(transform.position,new Vector3(Mathf.Sin(newhead*Mathf.PI/180),0,Mathf.Cos(newhead*Mathf.PI/180)),out hit, 100, terrain))
+                {
+                    orderedHeading = newhead;
+                }
+            }
+        }
+        else
+        {
+            Navigate(datum);
+            if ((datum-transform.position).magnitude < 50)
+            {
+                datum = Vector3.zero;
             }
         }
         snrs.Clear();
@@ -229,7 +262,7 @@ public class aisub : MonoBehaviour
                 }
                 else
                 {
-                    snrs.Add(enemySourceLevel - 10*Mathf.Log(9*(transform.position-enemies[i].transform.position).magnitude,10)-(le + sourceLevel)/3);
+                    snrs.Add(enemySourceLevel - 10*Mathf.Log(3*(transform.position-enemies[i].transform.position).magnitude,10)-sourceLevel/2-le);
                 }
             }
             else
@@ -243,7 +276,7 @@ public class aisub : MonoBehaviour
         }
         else
         {
-            bell = (int)Mathf.Clamp(depth / 125,1,5);//prevents cavitation
+            bell = Mathf.Clamp(depth / 125,1,3);//prevents cavitation
         }
         for(int i=0; i< enemies.Count;i++)
         {
@@ -262,69 +295,14 @@ public class aisub : MonoBehaviour
     {
         if (target != null)
         {
+            float trialheading;
             Vector3 targetheadingvector = Vector3.ProjectOnPlane(target.transform.forward,Vector3.up);
             Vector3 targetpositionvector = Vector3.ProjectOnPlane(target.transform.position-transform.position,Vector3.up);
             float targetrange = targetpositionvector.magnitude;
             float targetaob = Vector3.SignedAngle(targetheadingvector,-targetpositionvector,Vector3.up);//positive stbd, negative port
             float closingrate = Vector3.Dot(rb.velocity - targetRb.velocity,targetpositionvector)/(targetpositionvector.magnitude+.01f);
             float targetbell = Mathf.Clamp(5*targetRb.velocity.magnitude/(topspeed/6),0,5);
-            if (Physics.Linecast(transform.position,target.transform.position,terrain))
-            {
-                UnityEngine.AI.NavMeshPath path = new UnityEngine.AI.NavMeshPath();
-                UnityEngine.AI.NavMesh.CalculatePath(new Vector3(transform.position.x, waterheight, transform.position.z), new Vector3(target.transform.position.x, waterheight, target.transform.position.z), UnityEngine.AI.NavMesh.AllAreas, path);
-                if (path.corners.Length > 1)
-                {
-                    for (int i=0; i<path.corners.Length -1; i++)
-                    {
-                        Debug.DrawLine(path.corners[i], path.corners[i+1], Color.red,1);
-                    }
-                    orderedHeading = Quaternion.FromToRotation(Vector3.forward,path.corners[1]-transform.position).eulerAngles.y;
-                    print("Navigate");
-                }
-                bell = Mathf.Clamp(targetbell,0,5);
-            }
-            else if (targetrange > tooFarRange)
-            {
-                print("Point/Close");
-                orderedHeading = Quaternion.FromToRotation(Vector3.forward,targetpositionvector).eulerAngles.y;
-                if (closingrate < desiredClosingRate*.9)
-                {
-                    bell = Mathf.Clamp(bell + .1f,0,5);
-                }
-                else if (closingrate > desiredClosingRate*1.1)
-                {
-                    bell = Mathf.Clamp(bell - .1f,0,5);
-                }
-            }
-            else if (Mathf.Abs(targetaob)<90)
-            {
-                print("Spiral Out");
-                Vector3 spiraloutvec = Quaternion.Euler(0,-110*Mathf.Sign(targetaob),0)*targetpositionvector.normalized;
-                print(Mathf.Clamp((targetrange - tooCloseRange)/(tooFarRange-tooCloseRange),0,1));
-                print(Mathf.Clamp((tooFarRange-targetrange)/(tooFarRange-tooCloseRange),0,1));
-                Vector3 travelvec = Mathf.Clamp((targetrange - tooCloseRange)/(tooFarRange-tooCloseRange),0,1)*(-targetheadingvector.normalized)+Mathf.Clamp((tooFarRange-targetrange)/(tooFarRange-tooCloseRange),0,1)*spiraloutvec;
-                orderedHeading = Quaternion.FromToRotation(Vector3.forward,travelvec).eulerAngles.y;
-                bell = Mathf.Clamp(targetbell,0,5);
-            }
-            else if (targetrange < tooCloseRange)
-            {
-                print("Stop and Point");
-                orderedHeading = Quaternion.FromToRotation(Vector3.forward,targetpositionvector).eulerAngles.y;
-                bell = Mathf.Min(targetbell,1);
-            }
-            else if (Mathf.Abs(targetaob)<120)
-            {
-                print("Spiral In");
-                bell = Mathf.Clamp(targetbell,0,5);
-                Vector3 spiralinvec = Quaternion.Euler(0,-60*Mathf.Sign(targetaob),0)*targetpositionvector.normalized;
-                orderedHeading = Quaternion.FromToRotation(Vector3.forward,spiralinvec).eulerAngles.y;
-            }
-            else
-            {
-                print("Mirror");
-                orderedHeading = target.transform.rotation.eulerAngles.y;
-                bell = Mathf.Clamp(targetbell,0,5);
-            }
+            float belllimit = 5;
             float enemySourceLevel;
             if (target.TryGetComponent(out playersub j))
             {
@@ -338,20 +316,174 @@ public class aisub : MonoBehaviour
             {
                 enemySourceLevel = 0f;
             }
+            float enemysnr = enemySourceLevel - 10*Mathf.Log(3*(transform.position-target.transform.position).magnitude,10)-sourceLevel/2 - le;
+            if (enemysnr < 50 - (cavitation ? 50 : 0))
+            {
+                belllimit = Mathf.Min(5,depth/125+.9f);
+            }
+            if (targetrange > tooFarRange)
+            {
+                trialheading = Quaternion.FromToRotation(Vector3.forward,targetpositionvector).eulerAngles.y;
+                if (closingrate < desiredClosingRate*.9)
+                {
+                    bell = Mathf.Clamp(bell + .1f,0,belllimit);
+                }
+                else if (closingrate > desiredClosingRate*1.1)
+                {
+                    bell = Mathf.Clamp(bell - .1f,0,belllimit);
+                }
+            }
+            else if (Mathf.Abs(targetaob)<90)
+            {
+                Vector3 spiraloutvec = Quaternion.Euler(0,-110*Mathf.Sign(targetaob),0)*targetpositionvector.normalized;
+                Vector3 travelvec = Mathf.Clamp((targetrange - tooCloseRange)/(tooFarRange-tooCloseRange),0,1)*(-targetheadingvector.normalized)+Mathf.Clamp((tooFarRange-targetrange)/(tooFarRange-tooCloseRange),0,1)*spiraloutvec;
+                trialheading = Quaternion.FromToRotation(Vector3.forward,travelvec).eulerAngles.y;
+                bell = Mathf.Clamp(targetbell,0,belllimit);
+            }
+            else if (targetrange < tooCloseRange)
+            {
+                trialheading = Quaternion.FromToRotation(Vector3.forward,targetpositionvector).eulerAngles.y;
+                bell = Mathf.Min(targetbell,1);
+            }
+            else if (Mathf.Abs(targetaob)<120)
+            {
+                bell = Mathf.Clamp(targetbell,0,belllimit);
+                Vector3 spiralinvec = Quaternion.Euler(0,-60*Mathf.Sign(targetaob),0)*targetpositionvector.normalized;
+                trialheading = Quaternion.FromToRotation(Vector3.forward,spiralinvec).eulerAngles.y;
+            }
+            else
+            {
+                trialheading = target.transform.rotation.eulerAngles.y;
+                bell = Mathf.Clamp(targetbell,0,belllimit);
+                if (Quaternion.Angle(transform.rotation,target.transform.rotation)<10)
+                {
+                    if(!Physics.Linecast(transform.position,target.transform.position,terrain))
+                    {
+                        Shoot(target.transform.position-transform.position);
+                    }
+                }
+            }
+            if (orderedDepth < 150)
+            {
+                Navigate(target.transform.position);
+            }
+            else if (Physics.Raycast(new Vector3(transform.position.x,-20,transform.position.z), new Vector3(Mathf.Sin(trialheading*Mathf.PI/180),-20,Mathf.Cos(trialheading*Mathf.PI/180)), 50, terrain))
+            {
+                Navigate(target.transform.position);
+            }
+            else if (Physics.Linecast(transform.position,target.transform.position,terrain))
+            {
+                Navigate(target.transform.position);
+            }
+            else
+            {
+                orderedHeading = trialheading;
+            }
             if (Mathf.Abs(Quaternion.FromToRotation(-transform.forward,target.transform.position-transform.position).eulerAngles.y) < baffledRegion)
             {
+                datum = target.transform.position;
                 target = null;
                 targetRb = null;
             }
-            else if (enemySourceLevel - 10*Mathf.Log(9*(transform.position-target.transform.position).magnitude,10)-(le + sourceLevel)/3<3)
+            else if (enemysnr<0)
             {
-                orderedHeading = Quaternion.FromToRotation(Vector3.forward,targetpositionvector).eulerAngles.y;
+                datum = target.transform.position;
                 target = null;
                 targetRb = null;
             }
         }
     }
 
+    void Navigate(Vector3 destination)
+    {
+        UnityEngine.AI.NavMeshPath path = new UnityEngine.AI.NavMeshPath();
+        UnityEngine.AI.NavMesh.CalculatePath(new Vector3(transform.position.x, waterheight, transform.position.z), new Vector3(destination.x, waterheight, destination.z), UnityEngine.AI.NavMesh.AllAreas, path);
+        if (path.corners.Length > 1)
+        {
+            for (int i=0; i<path.corners.Length -1; i++)
+            {
+                Debug.DrawLine(path.corners[i], path.corners[i+1], Color.red,1);
+            }
+            orderedHeading = Quaternion.FromToRotation(Vector3.forward,path.corners[1]-transform.position).eulerAngles.y;
+        }
+    }
+
+    void DetectTorpedo()
+    {
+        float closestdistance = torpedoDetectionDistance + 1;
+        Collider[] torpedoArray = Physics.OverlapSphere(transform.position,torpedoDetectionDistance,torpedomask);
+        foreach (var torpedoCollider in torpedoArray)
+        {
+            float torpedodistance = (torpedoCollider.transform.position - transform.position).magnitude;
+            if (torpedodistance < closestdistance)
+            {
+                if (torpedoCollider.gameObject.GetComponent<zemtorpedo>().shooter != gameObject)
+                {
+                    if (closestTorpedo == null)
+                    {
+                        orderedDepth = 0;
+                    }
+                    closestdistance = torpedodistance;
+                    closestTorpedo = torpedoCollider.transform;
+                    closestTorpedorb = torpedoCollider.gameObject.GetComponent<Rigidbody>();
+                }
+            }
+        }
+        if (closestdistance > torpedoDetectionDistance)
+        {
+            closestTorpedo = null;
+            closestTorpedorb = null;
+        }
+    }
+
+    void TorpedoEvasion()
+    {
+        Shoot(closestTorpedo.position-transform.position);
+        bell = 5;
+        Vector3 torpedorelativepos = closestTorpedo.position-transform.position;
+        float torpedoheading = Quaternion.FromToRotation(Vector3.forward,torpedorelativepos).eulerAngles.y;
+        Vector3 torpedovel = closestTorpedorb.velocity;
+        if (torpedorelativepos.z*torpedovel.x-torpedorelativepos.x*torpedovel.z < 0)  //leftward rotation
+        {
+            orderedHeading = (torpedoheading + 100)%360;
+        }
+        else
+        {
+            orderedHeading = (torpedoheading + 260)%360;
+        }
+        if (depth > 500 | Physics.Raycast(transform.position, Vector3.down, 40, terrain))
+        {
+            orderedDepth = 0;
+        }
+        else if (depth < 150)
+        {
+            Physics.Raycast(transform.position, Vector3.down, out hit, Mathf.Infinity, terrain);
+            orderedDepth = depth+hit.distance*10;
+        }
+    }
+
+    void EmergencyResponse()
+    {
+        OnBlow();
+        orderedDepth = 0;
+        if(jamplane)
+        {
+            bell = 0;
+        }
+        else
+        {
+            bell = 5;
+        }
+        if (Physics.Raycast(transform.position, new Vector3(Mathf.Sin(orderedHeading*Mathf.PI/180),0,Mathf.Cos(orderedHeading*Mathf.PI/180)), 100, terrain))
+        {
+            bell = 1;
+            int newhead = Random.Range(0,359);
+            if (!Physics.Raycast(transform.position,new Vector3(Mathf.Sin(newhead*Mathf.PI/180),0,Mathf.Cos(newhead*Mathf.PI/180)),out hit, 100, terrain))
+            {
+                orderedHeading = newhead;
+            }
+        }
+    }
 
     void BuoyancyCalc()
     {
@@ -390,7 +522,7 @@ public class aisub : MonoBehaviour
             cavitation = false;
             cavitationTrail.Stop();
         }
-        sourceLevel = rb.velocity.magnitude*6 + 40 + (cavitation ? 50 : 0);
+        sourceLevel = rb.velocity.magnitude*6 + 70 + (cavitation ? 50 : 0);
     }
 
     void OnBlow()
@@ -413,13 +545,14 @@ public class aisub : MonoBehaviour
         }
     }
 
-    void Shoot()
+    void Shoot(Vector3 tranvec)
     {
         if (Time.time - lastShotTime > torpedoReloadTime)
         {
             GameObject newtorp = Instantiate(torpedo,transform.TransformPoint(new Vector3(0,0,0)),transform.rotation);
+            lastShotTime = Time.time;
             newtorp.GetComponent<zemtorpedo>().shooter = gameObject;
-            newtorp.GetComponent<zemtorpedo>().transitVector = maincam.transform.forward;
+            newtorp.GetComponent<zemtorpedo>().transitVector = tranvec;
             newtorp.GetComponent<Rigidbody>().velocity = rb.velocity + transform.forward*30.0f;
         }
     }
@@ -430,7 +563,7 @@ public class aisub : MonoBehaviour
         int floodlocation = (int)(collisionpoint.z*3/length+1.5);
         if (floodlocation > 2){floodlocation = 2;}
         if (floodlocation <0 ){floodlocation =0;}
-        if (col.gameObject.tag == "Torpedo")
+        if (col.gameObject.tag == "torpedo")
         {
             health = health - 1f;
             CauseCasualty(floodlocation);
@@ -463,7 +596,6 @@ public class aisub : MonoBehaviour
         else if (Physics.OverlapSphereNonAlloc(transform.position,30,results,terrain)>0)
         {
             orderedDepth=depth-200;
-            print("too close!");
         }
         else
         {
@@ -546,6 +678,32 @@ public class aisub : MonoBehaviour
     void Die()
     {
         Destroy(gameObject);
+    }
+
+    IEnumerator EMBTblow()
+    {
+        for (int i = 0; i<2; i++)
+        {
+            embteffects[i].Play();
+        }
+        yield return new WaitForSeconds(5f);
+        for (int i = 0; i<2; i++)
+        {
+            embteffects[i].Stop();
+        }
+    }
+
+    IEnumerator EMBTvent()
+    {
+        for (int i = 0; i<2; i++)
+        {
+            venteffects[i].Play();
+        }
+        yield return new WaitForSeconds(5f);
+        for (int i = 0; i<2; i++)
+        {
+            venteffects[i].Stop();
+        }
     }
 
     IEnumerator Jam()
